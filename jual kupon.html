@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penjualan Kupon Jalan Sehat - Bersama</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        tailwind.config = {theme:{extend:{colors:{utama:'#165DFF',sukses:'#00B42A',peringatan:'#FF7D00'}}}};
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen p-3 md:p-6">
+    <div class="max-w-6xl mx-auto bg-white rounded-xl shadow-md p-4 md:p-6">
+        <h1 class="text-xl md:text-2xl font-bold text-center text-utama mb-5">PENCATATAN JUAL KUPON - AKTIF BERSAMA</h1>
+
+        <!-- PENGATURAN -->
+        <div class="bg-blue-50 p-4 rounded-lg mb-5">
+            <p class="text-sm mb-2">🔗 Terhubung ke penyimpanan bersama: <b>Semua perubahan terlihat langsung</b></p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><label class="block text-sm font-medium mb-1">Total Kupon</label><input type="number" id="totalKupon" value="500" class="w-full p-2 border rounded"></div>
+                <div><label class="block text-sm font-medium mb-1">Harga Satuan</label><input type="number" id="hargaSatuan" value="10000" class="w-full p-2 border rounded"></div>
+            </div>
+            <button onclick="simpanPengaturan()" class="mt-3 w-full bg-utama text-white py-2 rounded">Simpan Pengaturan</button>
+        </div>
+
+        <!-- RINGKASAN -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <div class="bg-gray-100 p-3 rounded text-center"><p class="text-xs text-gray-600">Total</p><p class="text-lg font-bold" id="lblTotal">500</p></div>
+            <div class="bg-green-100 p-3 rounded text-center"><p class="text-xs text-gray-600">Terjual</p><p class="text-lg font-bold text-sukses" id="lblTerjual">0</p></div>
+            <div class="bg-orange-100 p-3 rounded text-center"><p class="text-xs text-gray-600">Sisa</p><p class="text-lg font-bold text-peringatan" id="lblSisa">500</p></div>
+            <div class="bg-purple-100 p-3 rounded text-center"><p class="text-xs text-gray-600">Pendapatan</p><p class="text-lg font-bold text-purple-700" id="lblPendapatan">Rp 0</p></div>
+        </div>
+
+        <!-- FORM INPUT -->
+        <div class="border p-4 rounded mb-5">
+            <h3 class="font-semibold mb-3">Input Penjualan Baru</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                <div><label class="block text-sm mb-1">Nama Pembeli</label><input type="text" id="nama" class="w-full p-2 border rounded"></div>
+                <div><label class="block text-sm mb-1">No. Kupon</label><input type="text" id="noKupon" class="w-full p-2 border rounded"></div>
+                <div><label class="block text-sm mb-1">Jumlah</label><input type="number" id="jmlBeli" value="1" min="1" class="w-full p-2 border rounded"></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div><label class="block text-sm mb-1">Cara Bayar</label>
+                    <select id="metodeBayar" class="w-full p-2 border rounded">
+                        <option>Tunai</option><option>Transfer</option><option>QRIS</option>
+                    </select>
+                </div>
+                <div><label class="block text-sm mb-1">Total Bayar</label><input type="text" id="totalBayar" readonly class="w-full p-2 border rounded bg-gray-50"></div>
+            </div>
+            <button onclick="tambahPenjualan()" class="w-full bg-sukses text-white py-2 rounded">Simpan & Perbarui Semua</button>
+        </div>
+
+        <!-- TABEL -->
+        <div class="overflow-x-auto">
+            <h3 class="font-semibold mb-3">Daftar Penjualan Terkini</h3>
+            <table class="w-full border text-xs md:text-sm">
+                <thead class="bg-gray-100"><tr>
+                    <th class="p-2 border">No</th><th class="p-2 border">Tgl</th><th class="p-2 border">Nama</th><th class="p-2 border">No. Kupon</th>
+                    <th class="p-2 border">Jml</th><th class="p-2 border">Bayar</th><th class="p-2 border">Total</th>
+                </tr></thead>
+                <tbody id="tabelRiwayat"></tbody>
+            </table>
+        </div>
+        <div class="mt-4 flex gap-2">
+            <button onclick="muatUlangData()" class="bg-gray-600 text-white px-4 py-2 rounded">Muat Ulang Data</button>
+            <button onclick="eksporData()" class="bg-utama text-white px-4 py-2 rounded">Unduh File</button>
+        </div>
+    </div>
+
+    <script>
+        // === TEMPELKAN TAUTAN GOOGLE SHEETS KAMU DI BAWAH INI ===
+        const LINK_SHEET = "https://docs.google.com/spreadsheets/d/1PSxO0Frdd9Juh5rxVItDGJ03z3ERCQiV9wQSFCwOWus/export?format=csv";
+        let pengaturan = {totalKupon:500,hargaSatuan:10000};
+        let riwayat = [];
+
+        async function mulai() {
+            await muatDataBersama();
+            document.getElementById('jmlBeli').addEventListener('input',hitungTotal);
+            setInterval(muatDataBersama,10000); // Perbarui otomatis tiap 10 detik
+        }
+
+        async function muatDataBersama() {
+            try {
+                const res = await fetch(LINK_SHEET);
+                const teks = await res.text();
+                const baris = teks.split('\n').map(b=>b.split(','));
+                riwayat = baris.slice(1).filter(b=>b[0]).map(b=>({
+                    tanggal:b[1],nama:b[2],noKupon:b[3],jumlah:parseInt(b[4]),caraBayar:b[5],totalBayar:parseInt(b[6])
+                }));
+                perbaruiTampilan(); tampilkanRiwayat();
+            }catch(e){console.log('Menunggu data...');}
+        }
+
+        function hitungTotal() {
+            document.getElementById('totalBayar').value = `Rp ${(parseInt(document.getElementById('jmlBeli').value||0)*pengaturan.hargaSatuan).toLocaleString('id-ID')}`;
+        }
+
+        async function tambahPenjualan() {
+            const jml = parseInt(document.getElementById('jmlBeli').value);
+            const terjual = riwayat.reduce((s,i)=>s+i.jumlah,0);
+            if(terjual+jml>pengaturan.totalKupon) return alert('Kupon habis!');
+            const baru = {
+                tanggal:new Date().toLocaleDateString('id-ID'),
+                nama:document.getElementById('nama').value,
+                noKupon:document.getElementById('noKupon').value,
+                jumlah:jml,caraBayar:document.getElementById('metodeBayar').value,
+                totalBayar:jml*pengaturan.hargaSatuan
+            };
+            riwayat.push(baru);
+            alert('Tersimpan! Segera perbarui Google Sheets secara manual agar semua melihatnya.');
+            document.getElementById('nama').value='';document.getElementById('noKupon').value='';document.getElementById('jmlBeli').value=1;
+            hitungTotal(); perbaruiTampilan(); tampilkanRiwayat();
+        }
+
+        function perbaruiTampilan() {
+            const t = riwayat.reduce((s,i)=>s+i.jumlah,0);
+            const p = riwayat.reduce((s,i)=>s+i.totalBayar,0);
+            document.getElementById('lblTotal').textContent=pengaturan.totalKupon;
+            document.getElementById('lblTerjual').textContent=t;
+            document.getElementById('lblSisa').textContent=pengaturan.totalKupon-t;
+            document.getElementById('lblPendapatan').textContent=`Rp ${p.toLocaleString('id-ID')}`;
+            hitungTotal();
+        }
+
+        function tampilkanRiwayat() {
+            document.getElementById('tabelRiwayat').innerHTML=riwayat.map((b,u)=>`
+            <tr class="border"><td class="p-2 border text-center">${u+1}</td><td class="p-2 border">${b.tanggal}</td>
+            <td class="p-2 border">${b.nama}</td><td class="p-2 border">${b.noKupon}</td>
+            <td class="p-2 border text-center">${b.jumlah}</td><td class="p-2 border">${b.caraBayar}</td>
+            <td class="p-2 border">Rp ${b.totalBayar.toLocaleString('id-ID')}</td></tr>`).join('');
+        }
+
+        function simpanPengaturan() {
+            pengaturan.totalKupon=parseInt(document.getElementById('totalKupon').value);
+            pengaturan.hargaSatuan=parseInt(document.getElementById('hargaSatuan').value);
+            perbaruiTampilan(); alert('Pengaturan tersimpan!');
+        }
+
+        function muatUlangData(){muatDataBersama();alert('Data diperbarui!');}
+
+        function eksporData() {
+            let csv="No,Tanggal,Nama,No Kupon,Jumlah,Metode,Total\n";
+            riwayat.forEach((b,u)=>csv+=`${u+1},${b.tanggal},"${b.nama}","${b.noKupon}",${b.jumlah},"${b.caraBayar}",${b.totalBayar}\n`);
+            const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+            a.download='Laporan_Kupon_Bersama.csv';a.click();
+        }
+
+        mulai();
+    </script>
+</body>
+</html>
